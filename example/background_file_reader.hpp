@@ -2,7 +2,6 @@
 
 #include <Windows.h>
 #include <stdint.h>
-#include <string>
 
 #include "task_pool.h"
 
