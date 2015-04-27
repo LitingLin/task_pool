@@ -83,7 +83,6 @@ unsigned int __stdcall task_pool::worker_thread(void *ctx)
 #ifdef TASK_POOL_VERBOSE
 				printf("Thread %d slept.\n", thread_id);
 #endif // TASK_POOL_VERBOSE
-
 				dwError = WaitForSingleObject(thread_awake_event, INFINITE);
 				ASSERT_WITH_ERROR_VALUE_WIN32_ERRORCODE(dwError == WAIT_OBJECT_0, dwError);
 #ifdef TASK_POOL_VERBOSE
@@ -91,12 +90,10 @@ unsigned int __stdcall task_pool::worker_thread(void *ctx)
 #endif // TASK_POOL_VERBOSE
 				iError = ResetEvent(thread_awake_event);
 				ASSERT_WITH_WIN32_ERRORCODE(iError);
+				isThreadIdle = FALSE;
 			}
-
 		else
 		{
-			isThreadIdle = FALSE;
-
 			do
 			{
 				if (task_queue.try_pop(task_entity))
@@ -246,7 +243,7 @@ error_type task_pool::submit_task(long task_id, task *task_ptr)
 	if (m_queue_size != 0 && m_task_id_map.size() >= m_queue_size)
 	{
 #ifdef TASK_POOL_VERBOSE
-		printf("Task %d was dismissed(Waiting queue are full.).\n", task_id);
+		printf("Task %d was dismissed(Waiting queue are full).\n", task_id);
 #endif
 
 		return error_type::TASK_QUEUE_FULL;
@@ -273,7 +270,7 @@ error_type task_pool::submit_task(long task_id, task *task_ptr)
 			break;
 		}
 #ifdef TASK_POOL_VERBOSE
-		printf("Task %d entered waiting queue(Executors are busy.).\n", task_id);
+		printf("Task %d entered waiting queue(Executors are busy).\n", task_id);
 #endif
 	}
 
