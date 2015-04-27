@@ -25,14 +25,12 @@ enum class error_type
 	TASK_NOT_SUBMITTED,
 	TASK_QUEUE_FULL
 };
-#ifndef INFINITE
-#include <limits.h>
-#define INFINITE ULONG_MAX
-#endif
+
 class task_pool
 {
 public:
-	task_pool(unsigned long thread_number = 1, bool is_autorelease = false, unsigned long task_queue_size = INFINITE);
+	//0 for task_queue_size means unlimited
+	task_pool(unsigned long thread_number = 1, bool is_autorelease = false, unsigned long task_queue_size = 0);
 	~task_pool();
 	long new_task();
 	task_state query_task_state(long task_id);
@@ -40,7 +38,7 @@ public:
 	error_type submit_task(long task_id, task *task_ptr);
 	error_type release_task(long task_id);
 	void set_is_autorelease(bool autorelease);
-	void set_queue_size(unsigned long size);
+	void set_queue_size(unsigned long size);//0 for size means unlimited
 private:
 	static unsigned int __stdcall worker_thread(void *ctx);
 	concurrency::concurrent_queue<std::pair<long, task*>> m_task_queue;

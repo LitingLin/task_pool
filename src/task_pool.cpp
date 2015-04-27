@@ -10,17 +10,26 @@
 #ifdef _DEBUG
 #include <iostream>
 #define PRINT_ERROR_VALUE(val) \
-std::cout << "Error occured in function " << __FUNCSIG__ << " file " << __FILE__ << " line " << __LINE__ << ", invalid value:" << val << std::endl;
+std::cout << "Error occured in function " << __FUNCSIG__ << " file " << __FILE__ << " line " << __LINE__ << ", invalid value:" << val << "." << std::endl;
 #define PRINT_WIN32_ERRORCODE \
-std::cout << "Error occured in function " << __FUNCSIG__ << " file " << __FILE__ << " line " << __LINE__ << ", Win32 error code:" << GetLastError() << std::endl;
-#define ASSERT_WITH_WIN32_ERRORCODE(val) \
-	if (val) {\
-	assert(val); \
-	PRINT_WIN32_ERRORCODE;}
+std::cout << "Error occured in function " << __FUNCSIG__ << " file " << __FILE__ << " line " << __LINE__ << ", Win32 error code:" << GetLastError() << "." << std::endl;
+#define PRINT_ERROR_VALUE_WIN32_ERRORCODE(val) \
+std::cout << "Error occured in function " << __FUNCSIG__ << " file " << __FILE__ << " line " << __LINE__ << ", invalid value:" << val << ", Win32 error code:" << GetLastError() << "." << std::endl;
+#define ASSERT_WITH_WIN32_ERRORCODE(boolean) \
+if (!boolean) { \
+	PRINT_WIN32_ERRORCODE; \
+	abort(); \
+}
+#define ASSERT_WITH_ERROR_VALUE_WIN32_ERRORCODE(boolean,val) \
+if (!boolean) { \
+	PRINT_ERROR_VALUE_WIN32_ERRORCODE(val); \
+	abort(); \
+}
 #else
 #define PRINT_ERROR_VALUE(val)
 #define PRINT_WIN32_ERRORCODE
-#define ASSERT_WITH_WIN32_ERRORCODE(val)
+#define ASSERT_WITH_WIN32_ERRORCODE(boolean)
+#define ASSERT_WITH_ERROR_VALUE_WIN32_ERRORCODE(boolean,val)
 #endif
 
 struct thread_context
@@ -51,7 +60,10 @@ unsigned int __stdcall task_pool::worker_thread(void *ctx)
 	task *task_ptr;
 	volatile task_state* state;
 
-	HANDLE waiting_thread_handle;
+	unsigned long dwError;
+	int iError;
+
+	HANDLE event_waiting;
 
 	for (;;)
 	{
@@ -64,11 +76,13 @@ unsigned int __stdcall task_pool::worker_thread(void *ctx)
 				printf("Thread %d slept.\n", thread_id);
 #endif // TASK_POOL_VERBOSE
 
-				WaitForSingleObject(thread_awake_event, INFINITE);
+				dwError = WaitForSingleObject(thread_awake_event, INFINITE);
+				ASSERT_WITH_ERROR_VALUE_WIN32_ERRORCODE(dwError == WAIT_OBJECT_0, dwError);
 #ifdef TASK_POOL_VERBOSE
 				printf("Thread %d awoke.\n", thread_id);
 #endif // TASK_POOL_VERBOSE
-				ResetEvent(thread_awake_event);
+				iError = ResetEvent(thread_awake_event);
+				ASSERT_WITH_WIN32_ERRORCODE(iError);
 			}
 
 		else
@@ -90,21 +104,15 @@ unsigned int __stdcall task_pool::worker_thread(void *ctx)
 
 			task_ptr->run();
 
-			*state = task_state::TASK_FINISHED;
-
-			while (waiting_map.contains(task_id))
+			if (waiting_map.contains(task_id))
 			{
-				try
-				{
-					waiting_thread_handle = waiting_map.find(task_id);
-				}
-				catch (std::out_of_range)
-				{
-					break;
-				}
-				unsigned long error = ResumeThread(waiting_thread_handle);
-				ASSERT_WITH_WIN32_ERRORCODE(error != -1);
+				event_waiting = waiting_map.find(task_id);
+
+				iError = SetEvent(event_waiting);
+				ASSERT_WITH_WIN32_ERRORCODE(iError);
 			}
+
+			*state = task_state::TASK_FINISHED;
 
 			if (class_ptr->m_is_autorelease)
 				class_ptr->release_task(task_id);
@@ -113,7 +121,7 @@ unsigned int __stdcall task_pool::worker_thread(void *ctx)
 	return 0;
 }
 
-task_pool::task_pool(unsigned long thread_number /*= 1*/, bool is_autorelease /*= false*/, unsigned long queue_size /*= INFINITE*/) : m_thread_number(thread_number), m_queue_size(queue_size), m_is_autorelease(is_autorelease), m_exit_signal(0), m_max_task_id(0)
+task_pool::task_pool(unsigned long thread_number /*= 1*/, bool is_autorelease /*= false*/, unsigned long queue_size /*= 0*/) : m_thread_number(thread_number), m_queue_size(queue_size), m_is_autorelease(is_autorelease), m_exit_signal(0), m_max_task_id(0)
 {
 	m_thread_handles = new HANDLE[thread_number];
 	m_thread_awake_event = new HANDLE[thread_number];
@@ -122,9 +130,9 @@ task_pool::task_pool(unsigned long thread_number /*= 1*/, bool is_autorelease /*
 	{
 		thread_context *ctx = new thread_context(this, i);
 		m_thread_handles[i] = reinterpret_cast<HANDLE>(_beginthreadex(NULL, 0, worker_thread, ctx, NULL, NULL));
-		ASSERT_WITH_WIN32_ERRORCODE(!m_thread_handles[i]);
+		ASSERT_WITH_WIN32_ERRORCODE(m_thread_handles[i]);
 		m_thread_awake_event[i] = CreateEvent(NULL, TRUE, FALSE, NULL);
-		ASSERT_WITH_WIN32_ERRORCODE(!m_thread_awake_event[i]);
+		ASSERT_WITH_WIN32_ERRORCODE(m_thread_awake_event[i]);
 		m_thread_available[i] = 1;
 	}
 }
@@ -132,26 +140,29 @@ task_pool::task_pool(unsigned long thread_number /*= 1*/, bool is_autorelease /*
 task_pool::~task_pool()
 {
 	m_exit_signal = 1;
-	unsigned long error;
+	unsigned long dwError;
+	int iError;
 
 	for (unsigned long i = 0; i != m_thread_number; i++)
 	{
-		error = SetEvent(m_thread_awake_event[i]);
+		iError = SetEvent(m_thread_awake_event[i]);
+		ASSERT_WITH_WIN32_ERRORCODE(iError);
 	}
 
-	error = WaitForMultipleObjectsEx(m_thread_number, m_thread_handles, true, INFINITE, false);
+	dwError = WaitForMultipleObjectsEx(m_thread_number, m_thread_handles, true, INFINITE, false);
 
 #ifdef _DEBUG
-	if (error < WAIT_OBJECT_0 && error >= (WAIT_OBJECT_0 + m_thread_number) && error != WAIT_TIMEOUT)
+	if (dwError < WAIT_OBJECT_0 && dwError >= (WAIT_OBJECT_0 + m_thread_number))
 	{
-		PRINT_ERROR_VALUE(error);
+		PRINT_ERROR_VALUE(dwError);
 		PRINT_WIN32_ERRORCODE;
 	}
 #endif
 
 	for (unsigned long i = 0; i != m_thread_number; i++)
 	{
-		CloseHandle(m_thread_awake_event[i]);
+		iError = CloseHandle(m_thread_awake_event[i]);
+		ASSERT_WITH_WIN32_ERRORCODE(iError);
 	}
 
 	delete[]m_thread_handles;
@@ -175,14 +186,6 @@ task_state task_pool::query_task_state(long task_id)
 	}
 }
 
-HANDLE get_current_thread_handle()
-{
-	HANDLE thread_handle;
-	int error = DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &thread_handle, NULL, TRUE, DUPLICATE_SAME_ACCESS);
-	ASSERT_WITH_WIN32_ERRORCODE(error != 0);
-	return thread_handle;
-}
-
 error_type task_pool::wait_for_task(long task_id)
 {
 	volatile task_state *state;
@@ -202,19 +205,27 @@ error_type task_pool::wait_for_task(long task_id)
 		abort();
 #endif
 	bool error;
+	unsigned long dwError;
+	int iError;
 
-	HANDLE current_thread_handle = get_current_thread_handle();
-	error = m_waiting_map.insert(task_id, current_thread_handle);
-	assert(error != 0);
+	HANDLE event_waiting = CreateEvent(NULL, TRUE, FALSE, NULL);
+	ASSERT_WITH_WIN32_ERRORCODE(event_waiting);
+
+	error = m_waiting_map.insert(task_id, event_waiting);
+	assert(error);
 
 	if (*state == task_state::TASK_FINISHED)
 		goto case_sucessful;
 
-	SuspendThread(current_thread_handle);
+	dwError = WaitForSingleObject(event_waiting, INFINITE);
+	ASSERT_WITH_ERROR_VALUE_WIN32_ERRORCODE(dwError == WAIT_OBJECT_0, dwError);
 
 case_sucessful:
 	error = m_waiting_map.erase(task_id);
-	assert(error != 0);
+	assert(error);
+
+	iError = CloseHandle(event_waiting);
+	ASSERT_WITH_WIN32_ERRORCODE(iError);
 
 	return error_type::STATUS_OK;
 }
@@ -224,7 +235,7 @@ error_type task_pool::submit_task(long task_id, task *task_ptr)
 	if (task_id >= m_max_task_id)
 		return error_type::INVALID_TASK_ID;
 
-	if (m_task_id_map.size() >= m_queue_size)
+	if (m_queue_size != 0 && m_task_id_map.size() >= m_queue_size)
 	{
 #ifdef TASK_POOL_VERBOSE
 		printf("Task %d was dismissed(Waiting queue are full.).\n", task_id);
@@ -248,8 +259,9 @@ error_type task_pool::submit_task(long task_id, task *task_ptr)
 	{
 		if (m_thread_available[i])
 		{
-			unsigned long error;
-			error = SetEvent(m_thread_awake_event[i]);
+			unsigned long dwError;
+			dwError = SetEvent(m_thread_awake_event[i]);
+			ASSERT_WITH_WIN32_ERRORCODE(dwError);
 			break;
 		}
 #ifdef TASK_POOL_VERBOSE
@@ -271,8 +283,8 @@ error_type task_pool::release_task(long task_id)
 		return error_type::INVALID_TASK_ID;
 	}
 
-	bool rc = m_task_id_map.erase(task_id);
-	assert(rc);
+	bool error = m_task_id_map.erase(task_id);
+	assert(error);
 
 	delete state;
 
