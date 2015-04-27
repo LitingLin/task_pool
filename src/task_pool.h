@@ -7,7 +7,6 @@ class task
 {
 public:
 	virtual void run() = 0;
-	virtual bool isSuccessful() = 0;
 };
 
 enum class task_state
@@ -23,27 +22,36 @@ enum class error_type
 	STATUS_OK,
 	TASK_ALREADY_EXIST,
 	INVALID_TASK_ID,
-	TASK_NOT_SUBMITTED
+	TASK_NOT_SUBMITTED,
+	TASK_QUEUE_FULL
 };
-
+#ifndef INFINITE
+#include <limits.h>
+#define INFINITE ULONG_MAX
+#endif
 class task_pool
 {
 public:
-	task_pool(unsigned long thread_number = 1);
+	task_pool(unsigned long thread_number = 1, bool is_autorelease = false, unsigned long task_queue_size = INFINITE);
 	~task_pool();
 	long new_task();
 	task_state query_task_state(long task_id);
 	error_type wait_for_task(long task_id);
 	error_type submit_task(long task_id, task *task_ptr);
 	error_type release_task(long task_id);
+	void set_is_autorelease(bool autorelease);
+	void set_queue_size(unsigned long size);
 private:
 	static unsigned int __stdcall worker_thread(void *ctx);
-	concurrency::concurrent_queue<std::pair<long, task*>> task_queue;
-	cuckoohash_map<long, volatile task_state*> task_id_map;
-	cuckoohash_map<long, HANDLE> waiting_map;
-	volatile int *thread_available;
-	volatile int exit_signal;
-	HANDLE *thread_handles;
-	unsigned long thread_number;
-	volatile long max_task_id;
+	concurrency::concurrent_queue<std::pair<long, task*>> m_task_queue;
+	cuckoohash_map<long, volatile task_state*> m_task_id_map;
+	cuckoohash_map<long, HANDLE> m_waiting_map;
+	volatile int *m_thread_available;
+	volatile int m_exit_signal;
+	HANDLE *m_thread_handles;
+	HANDLE *m_thread_awake_event;
+	unsigned long m_thread_number;
+	volatile long m_max_task_id;
+	volatile unsigned long m_queue_size;
+	bool m_is_autorelease;
 };
