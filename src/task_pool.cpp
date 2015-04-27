@@ -7,6 +7,13 @@
 #include <utility>
 //Caution! The correctness of the code is relied on the assurance of memory order on volatile variable. (Supported by MSVC since version 8.0)  
 
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
+
 #ifdef _DEBUG
 #include <iostream>
 #define PRINT_ERROR_VALUE(val) \
@@ -72,7 +79,7 @@ unsigned int __stdcall task_pool::worker_thread(void *ctx)
 			if (class_ptr->m_exit_signal)
 				break;
 			else{
-				isThreadIdle = 1;
+				isThreadIdle = TRUE;
 #ifdef TASK_POOL_VERBOSE
 				printf("Thread %d slept.\n", thread_id);
 #endif // TASK_POOL_VERBOSE
@@ -88,7 +95,7 @@ unsigned int __stdcall task_pool::worker_thread(void *ctx)
 
 		else
 		{
-			isThreadIdle = 0;
+			isThreadIdle = FALSE;
 
 			do
 			{
@@ -122,7 +129,7 @@ unsigned int __stdcall task_pool::worker_thread(void *ctx)
 	return 0;
 }
 
-task_pool::task_pool(unsigned long thread_number /*= 1*/, bool is_autorelease /*= false*/, unsigned long queue_size /*= 0*/) : m_thread_number(thread_number), m_queue_size(queue_size), m_is_autorelease(is_autorelease), m_exit_signal(0), m_max_task_id(0)
+task_pool::task_pool(unsigned long thread_number /*= 1*/, bool is_autorelease /*= false*/, unsigned long queue_size /*= 0*/) : m_thread_number(thread_number), m_queue_size(queue_size), m_is_autorelease(is_autorelease), m_exit_signal(FALSE), m_max_task_id(0)
 {
 	m_thread_handles = new HANDLE[thread_number];
 	m_thread_awake_event = new HANDLE[thread_number];
@@ -134,7 +141,7 @@ task_pool::task_pool(unsigned long thread_number /*= 1*/, bool is_autorelease /*
 		ASSERT_WITH_WIN32_ERRORCODE(m_thread_handles[i]);
 		m_thread_awake_event[i] = CreateEvent(NULL, TRUE, FALSE, NULL);
 		ASSERT_WITH_WIN32_ERRORCODE(m_thread_awake_event[i]);
-		m_thread_available[i] = 1;
+		m_thread_available[i] = TRUE;
 	}
 }
 
@@ -150,7 +157,7 @@ task_pool::~task_pool()
 		ASSERT_WITH_WIN32_ERRORCODE(iError);
 	}
 
-	dwError = WaitForMultipleObjectsEx(m_thread_number, m_thread_handles, true, INFINITE, false);
+	dwError = WaitForMultipleObjectsEx(m_thread_number, m_thread_handles, TRUE, INFINITE, FALSE);
 
 #ifdef _DEBUG
 	if (dwError < WAIT_OBJECT_0 && dwError >= (WAIT_OBJECT_0 + m_thread_number))
