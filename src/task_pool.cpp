@@ -28,6 +28,7 @@ if (!boolean) { \
 #else
 #define PRINT_ERROR_VALUE(val)
 #define PRINT_WIN32_ERRORCODE
+#define PRINT_ERROR_VALUE_WIN32_ERRORCODE(val)
 #define ASSERT_WITH_WIN32_ERRORCODE(boolean)
 #define ASSERT_WITH_ERROR_VALUE_WIN32_ERRORCODE(boolean,val)
 #endif
