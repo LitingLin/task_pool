@@ -25,6 +25,11 @@ enum class error_type
 	TASK_NOT_SUBMITTED,
 	TASK_QUEUE_FULL
 };
+#ifndef _WIN64
+#define __align__ __declspec(align(32))
+#else
+#define __align__ __declspec(align(64))
+#endif // !_WIN64
 
 class task_pool
 {
@@ -38,18 +43,19 @@ public:
 	error_type submit_task(long task_id, task *task_ptr);
 	error_type release_task(long task_id);
 	void set_is_autorelease(bool autorelease);
-	void set_queue_size(unsigned long size);//0 for size means unlimited
+	void set_queue_size_reserved(unsigned long size);//0 for size means unlimited
+	unsigned long get_queue_size();
 private:
 	static unsigned int __stdcall worker_thread(void *ctx);
 	concurrency::concurrent_queue<std::pair<long, task*>> m_task_queue;
-	cuckoohash_map<long, volatile task_state*> m_task_id_map;
-	cuckoohash_map<long, HANDLE> m_waiting_map;
+	cuckoohash_map<long, std::pair<volatile task_state*,volatile HANDLE*>> m_task_id_map;
 	volatile int *m_thread_available;
 	volatile int m_exit_signal;
 	HANDLE *m_thread_handles;
 	HANDLE *m_thread_awake_event;
 	unsigned long m_thread_number;
-	volatile long m_max_task_id;
-	volatile unsigned long m_queue_size;
+	__align__ volatile long m_max_task_id;
+	volatile unsigned long m_queue_size_reserved;
+	__align__ volatile unsigned long m_queue_size;
 	bool m_is_autorelease;
 };
